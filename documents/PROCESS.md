@@ -12,7 +12,8 @@
 - **測試基準演進**：
   - 練習 1 結束：`dotnet test` → **28** 通過  
   - 練習 2 結束：`dotnet test` → **36** 通過（+8 回歸／強化測試）  
-  - 練習 3 結束：`dotnet test` → **39** 通過（+3 LowStock service 測試）
+  - 練習 3 結束：`dotnet test` → **39** 通過（+3 LowStock service 測試）  
+  - **商品管理延伸功能**結束：`dotnet test` → **50** 通過（+11 create／update／status filter）
 
 ---
 
@@ -38,8 +39,9 @@
 5. 補 PROCESS 與 `/test-runner` 基準  
 6. **練習 2**：每個 bug 皆 UI 重現 → 分析 → Unit Test 先 → 修 production → UI 確認 → 分 commit push  
 7. **練習 3**：先確認 `/Products/LowStock` **404 是功能未做** → `/analyze-plan` → 人工改計畫（低庫存做在商品頁 filter，不塞頂部導覽）→ 實作 → 5 個 **Feature** commit push  
+8. **延伸：商品管理（非課綱編號練習）**：`/analyze-plan` 新增商品 → 再改 plan（列表可改庫存／狀態 → 再加 SKU／名稱、狀態下拉篩選）→ approve → 實作 → 5 個 **Feature** commit push  
 
-**為什麼變：** 環境與 agent 設定路徑若不先定案會反覆改；修 bug 時堅持「先測再修、一 bug 多 commit」；新功能堅持 **先 plan 再 code**，並依實際 UX 改寫規格中的導覽方式。
+**為什麼變：** 環境與 agent 設定路徑若不先定案會反覆改；修 bug 時堅持「先測再修、一 bug 多 commit」；新功能堅持 **先 plan 再 code**，並依實際 UX 改寫規格；延伸功能用**多輪改 plan** 再動手，避免一次 scope 膨脹失控。
 
 ### 2. AI 幫上大忙的地方
 
@@ -132,7 +134,14 @@
 
 1. `/analyze-plan` → 審計畫（分層、邊界、測試）→ 口頭／文字 **approve** 後才寫 code。  
 2. Commit 順序範例：`Feature - Unit Test …` → Core → Infrastructure → Web 頁 → 既有頁 filter。  
-3. 導覽若規格與 UX 衝突，**先改 plan 再實作**（例如低庫存入口放在 `/Products` 切換，不塞 `_Layout`）。
+3. 導覽若規格與 UX 衝突，**先改 plan 再實作**（例如低庫存入口放在 `/Products` 切換，不塞 `_Layout`）。  
+
+**招式 D：多輪 refine plan 再 approve（商品管理延伸）**
+
+1. 第一版 plan：只做 Create。  
+2. 第二版：列表可改庫存＋狀態。  
+3. 第三版：列表可改 **SKU／名稱**，並加 **販售狀態下拉篩選**。  
+4. 每一版都等 **approve** 才寫 code；commit 仍用 `Feature - …` 細切（Unit Test → Core → Infra → Web Create → Web List）。
 
 ---
 
@@ -216,6 +225,59 @@
 
 （尚未開始。）
 
+### 延伸功能 — 商品管理（Create / 列表編輯 / 狀態篩選）
+
+> 課綱練習 1–3 之外，依業務需要在商品頁補齊「能建、能改、能篩」的操作能力。流程仍走 `/analyze-plan` → 多輪改 plan → approve → Feature commits。
+
+#### 做了什麼
+
+| 能力 | 路由／入口 | 說明 |
+| --- | --- | --- |
+| **新增商品** | `/Products/Create`；列表「新增商品」 | SKU、名稱、單價、初始庫存、是否販售中 |
+| **列表編輯** | `/Products` 每列「儲存」 | 可改 **SKU、名稱、庫存、販售狀態**；**單價**建立後列表唯讀（避免誤改報價） |
+| **狀態篩選** | `GET /Products?status=all\|active\|inactive` | 下拉：全部／販售中／已停售；與低庫存模式切換並存 |
+
+#### 系統因此改善了什麼（改善前 → 改善後）
+
+| 面向 | 改善前 | 改善後 |
+| --- | --- | --- |
+| **商品主檔維護** | 只能靠種子／直接改 DB；UI 只能看列表 | 業務可在網頁**新增**商品，無需碰資料庫 |
+| **庫存與上下架** | 庫存只被建單／取消訂單間接改動；停售無法在列表操作 | 列表即可調 **庫存**、切 **販售中／已停售**，立刻影響建單可選商品（`GetActiveAsync`） |
+| **主檔資料品質** | SKU／名稱錯了只能改庫 | 列表可改 **SKU／名稱**；SKU **唯一**（新建與更新都檢查，更新可保留自己的 SKU） |
+| **查找效率** | 50 筆商品全列、含停售混在一起 | **狀態篩選**快速只看販售中或已停售 |
+| **與低庫存頁分工** | 練習 3 只有警示列表 | 低庫存仍負責門檻＋近 30 天銷量；**改主檔在全部商品列表**，職責清楚 |
+| **分層與可測性** | ProductService 幾乎唯讀 | 寫入走 `ServiceResult`＋Repository；**+11** 個 service 測試鎖住 filter／create／update 行為 |
+| **操作回饋** | 無 | `TempData` 成功／失敗訊息（與訂單建立同一套 layout alert） |
+
+#### 技術重點（對齊既有慣例）
+
+- Controller 薄：`Create` GET/POST、`Update` POST、`Index(status)`。  
+- Core：`CreateAsync` / `UpdateAsync` / `GetByStatusAsync`；`ProductStatusFilter`。  
+- Infra：`AddAsync`、`SkuExistsAsync(excludeId)`、依狀態查詢。  
+- UI：列表用 HTML5 `form="…"` 綁每列（避免 `<form>` 包 `<tr>` 非法 HTML）。  
+- 驗證：DataAnnotations + service（單價&gt;0、庫存≥0、SKU 長度／重複）。  
+- **無 migration**（既有 Products 表）。  
+
+#### 測試與 commit
+
+- 測試：全套件 **50** 通過（39→50）。  
+- Commits（已 push）：  
+  1. `Feature - Unit Test product create update filter`  
+  2. `Feature - Core product write and status filter`  
+  3. `Feature - Infrastructure product write and filter`  
+  4. `Feature - Web create product page`  
+  5. `Feature - Web Products list filter and edit`  
+
+#### 自我驗證（延伸）
+
+1. 能從 `/Products` 開「新增商品」並成功建立 → 列表看得到  
+2. 能改 SKU／名稱／庫存／狀態並儲存；重複 SKU 會失敗  
+3. 狀態下拉「販售中／已停售／全部」結果正確  
+4. 單價在列表不可改、建立時可設  
+5. `dotnet test` 全綠  
+
+（上述行為已由 service 測試覆蓋；UI 請重啟 app 後再目視確認。）
+
 ---
 
 ## 附錄：值得留下的對話片段
@@ -249,3 +311,10 @@
 - **作法：** `/analyze-plan` → 改為商品頁 filter 進 LowStock → 實作 Core/Infra/Web + 3 tests。  
 - **導覽：** `/Products` 上「低庫存」；**不**在 `_Layout` 加第三個導覽項（避免與「全部商品」重複入口）。  
 - **Commits：** 5 個 `Feature - …`；測試 36 → **39**。  
+
+### 片段 F — 延伸：商品管理如何改善系統
+
+- **痛點：** 訓練站原本商品只能 seed；庫存／停售／SKU 無法在 UI 維運，和「內部訂單系統」日常操作脫節。  
+- **改善：** 商品頁變成**可營運的主檔畫面**——建檔、改 SKU／名稱／庫存／上下架、依狀態篩選；低庫存頁專心做警示與銷量。  
+- **對下游：** 已停售商品不會進建單下拉（`GetActiveAsync`）；庫存數字與建單扣庫、取消還庫一致可維護。  
+- **工程：** plan 多輪 refine（Create → 庫存狀態 → SKU／名稱＋篩選）；測試 39→**50**；5 個 Feature commit。  
