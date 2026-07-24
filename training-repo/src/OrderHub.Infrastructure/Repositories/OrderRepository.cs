@@ -30,6 +30,7 @@ public class OrderRepository : IOrderRepository
         // UI and OrderService use 1-based page numbers; Skip must use (page - 1).
         // Fixes newest orders missing on /Orders page 1 after creation.
         // Fixes last page blank when Skip overshot TotalCount.
+        // Fixes status filters (e.g. Cancelled / 已取消) blank on page 1.
         var items = await query
             .OrderByDescending(o => o.CreatedAt)
             .Skip((page - 1) * pageSize)
