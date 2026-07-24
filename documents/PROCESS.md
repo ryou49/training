@@ -11,7 +11,8 @@
 - **執行環境**：Windows、VS2022 Debug / `dotnet run`；資料庫 SQL Server 預設實例 `localhost`，資料庫名 `OrderHubTraining`（種子：客戶 20、商品 50、訂單 200）
 - **測試基準演進**：
   - 練習 1 結束：`dotnet test` → **28** 通過  
-  - 練習 2 結束：`dotnet test` → **36** 通過（+8 回歸／強化測試）
+  - 練習 2 結束：`dotnet test` → **36** 通過（+8 回歸／強化測試）  
+  - 練習 3 結束：`dotnet test` → **39** 通過（+3 LowStock service 測試）
 
 ---
 
@@ -36,8 +37,9 @@
 4. 實作 → 拆成多個 commit 推上 fork（`ryou49/training`）  
 5. 補 PROCESS 與 `/test-runner` 基準  
 6. **練習 2**：每個 bug 皆 UI 重現 → 分析 → Unit Test 先 → 修 production → UI 確認 → 分 commit push  
+7. **練習 3**：先確認 `/Products/LowStock` **404 是功能未做** → `/analyze-plan` → 人工改計畫（低庫存做在商品頁 filter，不塞頂部導覽）→ 實作 → 5 個 **Feature** commit push  
 
-**為什麼變：** 環境與 agent 設定路徑若不先定案會反覆改；修 bug 時堅持「先測再修、一 bug 多 commit（Unit Test / Fix）」方便 review。
+**為什麼變：** 環境與 agent 設定路徑若不先定案會反覆改；修 bug 時堅持「先測再修、一 bug 多 commit」；新功能堅持 **先 plan 再 code**，並依實際 UX 改寫規格中的導覽方式。
 
 ### 2. AI 幫上大忙的地方
 
@@ -63,6 +65,14 @@
 
 → Agent 能對到 `Skip(page * pageSize)`、Gold 雙重折扣、Cancel 先改狀態再還庫存等根因。  
 **為什麼有效：** 有訂單號、頁面行為、金額／庫存數字，agent 不用猜症狀。
+
+**有效提問範例 4（練習 3：先 plan、再改導覽設計）：**
+
+> `/analyze-plan` Analyze plan for entire Exercise 3…  
+> 改 plan：直接改 `/Products`，用 filter 進 `/Products/LowStock`；不要 Layout 多一個低庫存。
+
+→ 產出分層檔案清單、查詢／N+1、驗證、≥3 測試；實作時只在商品頁做「全部商品｜低庫存」切換。  
+**為什麼有效：** 規格寫「導覽列」但實際產品路徑在商品列表；先改 plan 再 approve，避免做完又刪 Layout。
 
 ### 3. AI 誤導我的地方，與我如何發現
 
@@ -92,6 +102,13 @@
 - 若用**快照單價**當原價再 ×0.9，會得到 81=81，誤以為正確。  
 - 必須用 `/Products` **目錄原價**對 **應付總額**。
 
+**5）練習 3：把 404 當成「壞掉的既有頁」**
+
+- 文件寫了路由 `GET /Products/LowStock`，但 repo **從未實作** action／View。  
+- `/LowStock` 也會 404（沒有 `LowStockController`）。  
+- **如何發現：** 對照 `ProductsController` 只有 `Index`；HTTP 探測 `/Products` 200、`/Products/LowStock` 404（重啟後才 200）。  
+- **結論：** 練習 3 是**新功能**，不是練習 2 那種修 bug。
+
 ### 4. 我會帶回日常工作的一招
 
 （一個具體、可複製的做法，不要寫「要多驗證」這種口號——寫出**操作步驟**。）
@@ -110,6 +127,12 @@
 3. **先寫會失敗的回歸測試**（或寫完立刻跑證明失敗），再改 production。  
 4. `/test-runner` 全綠 → UI 再確認 → **Unit Test commit 再 Fix commit** 分開 push。  
 5. 每個 commit message 寫：**症狀 → 根因 → 修法**。
+
+**招式 C：新功能用 Feature 細切 commit（練習 3）**
+
+1. `/analyze-plan` → 審計畫（分層、邊界、測試）→ 口頭／文字 **approve** 後才寫 code。  
+2. Commit 順序範例：`Feature - Unit Test …` → Core → Infrastructure → Web 頁 → 既有頁 filter。  
+3. 導覽若規格與 UX 衝突，**先改 plan 再實作**（例如低庫存入口放在 `/Products` 切換，不塞 `_Layout`）。
 
 ---
 
@@ -143,7 +166,7 @@
    - **是。**（使用者已目視確認 Bug 1／2／3。）  
 
 4. 每個 bug 都補了一個回歸測試，`dotnet test` 全綠  
-   - **是。** 目前 **36** 通過、0 失敗。  
+   - **是。** 練習 2 結束時 **36** 通過；練習 3 後 **39** 通過。  
    - Bug 1：page1 含最新單、最後頁非空、Cancelled 篩選有列等。  
    - Bug 2：Gold 快照原價＋總額 90 一次；Silver 95。  
    - Bug 3：Pending／Confirmed 取消還庫存；Shipped 取消不動庫存。  
@@ -161,11 +184,29 @@
 練習 3
 
 1. `/Products/LowStock` 不帶參數 → 門檻 10 的結果；帶 `?threshold=3` → 結果隨之改變  
+   - **是。** `threshold` 省略時 controller 預設 **10**；GET 表單可改門檻。重啟 app 後 HTTP **200**（實作前為 404）。  
+   - 進入方式：`/Products` 上 **全部商品｜低庫存** 切換，或直接開 `/Products/LowStock`（**未**加頂部 Layout「低庫存」，依 UX 決策）。  
+
 2. `?threshold=0`、`?threshold=-1` → 頁面顯示驗證錯誤，不是 500  
+   - **是。** `LowStockViewModel.Threshold` 有 `[Range(1, …)]`；`TryValidateModel` + ModelState；live `?threshold=0` → **200** 非 500。  
+
 3. 售出數量欄位排除了 Cancelled 訂單（可用一筆已取消的訂單驗證）  
+   - **是。** Repository 聚合近 30 天 `OrderItem`，`Status != Cancelled`；單元測試：近期 Confirmed 5 + Cancelled 4 + 40 天前 10 → **SoldLast30Days = 5**。  
+
 4. 停售（已停售 badge）商品不出現在列表  
+   - **是。** 條件含 `IsActive`；測試 inactive stock=1 不出現。  
+
 5. 程式分層與命名跟既有的 Products 功能一致（請 agent 自我 review 一次，並自己確認）  
+   - **是。** Controller 薄、`ProductService.GetLowStockAsync`、EF 只在 `ProductRepository`、View 綁 `LowStockViewModel`、DataAnnotations 驗證。  
+   - 列表規則：`StockQuantity < threshold`（等於門檻不含）、庫存升冪；庫存 &lt; 5 用 `table-danger`。  
+
 6. 至少 3 個新測試，`dotnet test` 全綠  
+   - **是。**  
+     1. `GetLowStock_FiltersByThreshold_AndSortsByStockAscending`  
+     2. `GetLowStock_ExcludesInactiveProducts`  
+     3. `GetLowStock_SoldLast30Days_ExcludesCancelledAndOldOrders`  
+   - 全套件 **39** 通過。  
+   - Commits（Unit Test 先）：`Feature - Unit Test LowStock` → Core API → Infrastructure query → Web page → Products filter；已 push `origin/main`。  
 
 練習 4
 
@@ -173,6 +214,7 @@
 2. 我能說出這次重構「改善了什麼、沒有改變什麼」  
 3. 我有在 code review 的角度看過 diff（不是 agent 說好就好）  
 
+（尚未開始。）
 
 ---
 
@@ -200,3 +242,10 @@
 | 1 | 新單不在第一頁；末頁／已取消空白 | 1-based page 卻 `Skip(page * pageSize)` | `Skip((page-1)*pageSize)` |
 | 2 | Gold 總額偏低；Silver 正常 | Gold 建單先折快照，`CalculateTotal` 再折 | 快照原價；折扣只在 CalculateTotal |
 | 3 | 取消後庫存不回升 | 先設 Cancelled 再 if 還庫存 → 永遠不進 | 先還庫存再設 Cancelled |
+
+### 片段 E — 練習 3 低庫存
+
+- **問題：** 文件有 `/Products/LowStock`，開啟卻 404 → 功能未實作，不是路由設定錯。  
+- **作法：** `/analyze-plan` → 改為商品頁 filter 進 LowStock → 實作 Core/Infra/Web + 3 tests。  
+- **導覽：** `/Products` 上「低庫存」；**不**在 `_Layout` 加第三個導覽項（避免與「全部商品」重複入口）。  
+- **Commits：** 5 個 `Feature - …`；測試 36 → **39**。  
