@@ -7,7 +7,11 @@ public interface IProductRepository
 {
     Task<IReadOnlyList<Product>> GetAllAsync();
     Task<IReadOnlyList<Product>> GetActiveAsync();
+    Task<IReadOnlyList<Product>> GetByStatusAsync(ProductStatusFilter filter);
     Task<Product?> GetByIdAsync(int id);
+
+    Task<bool> SkuExistsAsync(string sku, int? excludeProductId = null);
+    Task AddAsync(Product product);
 
     /// <summary>
     /// Active products with StockQuantity &lt; threshold, ordered by stock ascending,
