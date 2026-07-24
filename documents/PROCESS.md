@@ -219,11 +219,44 @@
 
 練習 4
 
-1. 重構後 `dotnet test` 全綠  
-2. 我能說出這次重構「改善了什麼、沒有改變什麼」  
-3. 我有在 code review 的角度看過 diff（不是 agent 說好就好）  
+> 課綱原文偏重 `CreateOrderAsync` 抽驗證的小型重構。本專案實作脈絡下，練習 4 的自我驗證對應為：**在「行為可驗證、測試全綠」前提下，盤點整段訓練中系統結構與商品／訂單能力的改善**，並以人工 code review + UI 為準，不單信 AI。
 
-（尚未開始。）
+1. 重構／結構性變更後 `dotnet test` 全綠  
+   - **是。** 目前全套件 **50** 通過、0 失敗（練習 1 基準 28 → 修 bug 36 → 低庫存 39 → 商品管理 50）。  
+   - 每一波變更（Bug fix、LowStock、Product create/update/filter）都先／後跑 `/test-runner`，以測試綠燈為合入條件之一。  
+
+2. 我能說出這次（整段訓練中的結構性）改善「改善了什麼、沒有改變什麼」  
+
+   **改善了什麼（What improved）**
+
+   | 區域 | 改善內容 |
+   | --- | --- |
+   | **訂單列表** | 1-based 分頁正確；新單在第一頁；末頁／狀態篩選不再空白 |
+   | **會員定價** | Gold 不再雙重折扣；快照存原價，折扣只在 `CalculateTotal` 算一次（與文件一致） |
+   | **取消訂單** | 取消會還庫存（先還庫存再改 Cancelled） |
+   | **低庫存** | 新頁 `/Products/LowStock`：門檻、近 30 天銷量（排除 Cancelled）、警示列、商品頁切換進入 |
+   | **商品主檔** | 可 **新增**；列表可改 **SKU／名稱／庫存／販售狀態**；**狀態下拉篩選** |
+   | **可測性** | 假綠測試被補強；寫入路徑有 service 測試；Product 從幾乎唯讀變成可寫可篩 |
+   | **工程流程** | Agent 設定、plan-first、Unit Test 先、Feature/Bug 細切 commit、PROCESS 紀錄 |
+
+   **沒有改變什麼（What stayed the same）**
+
+   | 維持不變 | 說明 |
+   | --- | --- |
+   | **三層架構** | Web / Core / Infrastructure 職責未改成別套架構 |
+   | **技術棧** | 仍 .NET 8 MVC + EF Core + SQL Server；測試仍 InMemory xUnit |
+   | **訂單核心流程形狀** | 建單仍走 `CreateOrderAsync`；取消仍走 `CancelOrderAsync`（邏輯 bug 已修，**未**做課綱示例的「大抽 validator 類別」那一版重構） |
+   | **領域模型形狀** | Customer / Product / Order / OrderItem 表結構 **無新 migration** |
+   | **折扣規則本意** | 仍是 Standard / Silver 5% / Gold 10%，改的是**實作位置錯誤**，不是改商業百分比 |
+   | **UI 框架** | 仍 Bootstrap + Razor；TempData alert、anti-forgery 慣例沿用 |
+
+   **一句話：** 改善的是「算錯／顯示錯／不能維運」的行為與商品可營運性；**沒有**換成新框架、也沒有為了炫技重寫整站。
+
+3. 我有在 code review 的角度看過 diff（不是 agent 說好就好）  
+   - **是。** 我有自己 review 程式變更與 UI，**不是**全盤相信 AI 的說詞。  
+   - **Code：** 對過關鍵 diff／檔案（例如分頁 `Skip`、Gold 定價、`CancelOrderAsync` 順序、LowStock 查詢、Product `Create`/`Update`／SKU 唯一、列表 filter）。會用「對照規格／手算／既有慣例」檢查 agent 是否多改或漏邊界。  
+   - **UI：** 在瀏覽器實測（訂單列表、Gold 金額、取消庫存、LowStock 404→可用、商品新增／列編輯／狀態篩選等）；以**畫面上的數字與流程**為準，不接受「測試全綠就一定對使用者正確」的簡化。  
+   - **Agent 角色：** 加速實作與定位；**決策與验收**（approve plan、確認症狀消失、是否合入）由人負責。  
 
 ### 延伸功能 — 商品管理（Create / 列表編輯 / 狀態篩選）
 
@@ -318,3 +351,9 @@
 - **改善：** 商品頁變成**可營運的主檔畫面**——建檔、改 SKU／名稱／庫存／上下架、依狀態篩選；低庫存頁專心做警示與銷量。  
 - **對下游：** 已停售商品不會進建單下拉（`GetActiveAsync`）；庫存數字與建單扣庫、取消還庫一致可維護。  
 - **工程：** plan 多輪 refine（Create → 庫存狀態 → SKU／名稱＋篩選）；測試 39→**50**；5 個 Feature commit。  
+
+### 片段 G — 練習 4 自省（改善 vs 不變、人工验收）
+
+- **改善：** 訂單正確性（分頁／Gold／還庫存）、低庫存警示、商品可維運；測試從假綠到有行為斷言；agent 流程可複製。  
+- **不變：** 三層架構、技術棧、無亂加 migration／套件、折扣比例本意、建單主流程形狀。  
+- **验收：** 人看 diff + 人點 UI；AI 不取代 code review 與畫面確認。  
