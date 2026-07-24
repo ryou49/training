@@ -60,4 +60,69 @@ public class OrderServiceCancelTests
         Assert.False(result.Success);
         Assert.Contains("找不到", result.ErrorMessage);
     }
+
+    /// <summary>
+    /// Regression: cancel set Status=Cancelled before stock restore if, so stock never returned.
+    /// Create 10 → qty 3 → stock 7; after cancel stock must be 10 again.
+    /// </summary>
+    [Fact]
+    public async Task CancelOrder_Pending_RestoresProductStock()
+    {
+        using var db = TestSetup.CreateContext();
+        var service = TestSetup.CreateOrderService(db);
+        var customer = TestSetup.AddCustomer(db);
+        var product = TestSetup.AddProduct(db, stock: 10);
+
+        var created = await service.CreateOrderAsync(customer.Id, new[] { new NewOrderLine(product.Id, 3) });
+        Assert.True(created.Success);
+        Assert.Equal(7, db.Products.Single(p => p.Id == product.Id).StockQuantity);
+
+        var result = await service.CancelOrderAsync(created.Value!.Id);
+
+        Assert.True(result.Success);
+        Assert.Equal(OrderStatus.Cancelled, db.Orders.Single(o => o.Id == created.Value.Id).Status);
+        Assert.Equal(10, db.Products.Single(p => p.Id == product.Id).StockQuantity);
+    }
+
+    [Fact]
+    public async Task CancelOrder_Confirmed_RestoresProductStock()
+    {
+        using var db = TestSetup.CreateContext();
+        var service = TestSetup.CreateOrderService(db);
+        var customer = TestSetup.AddCustomer(db);
+        var product = TestSetup.AddProduct(db, stock: 10);
+
+        var created = await service.CreateOrderAsync(customer.Id, new[] { new NewOrderLine(product.Id, 2) });
+        Assert.True(created.Success);
+        var order = created.Value!;
+        order.Status = OrderStatus.Confirmed;
+        await db.SaveChangesAsync();
+        Assert.Equal(8, db.Products.Single(p => p.Id == product.Id).StockQuantity);
+
+        var result = await service.CancelOrderAsync(order.Id);
+
+        Assert.True(result.Success);
+        Assert.Equal(10, db.Products.Single(p => p.Id == product.Id).StockQuantity);
+    }
+
+    [Fact]
+    public async Task CancelOrder_Shipped_DoesNotChangeStock()
+    {
+        using var db = TestSetup.CreateContext();
+        var service = TestSetup.CreateOrderService(db);
+        var customer = TestSetup.AddCustomer(db);
+        var product = TestSetup.AddProduct(db, stock: 10);
+
+        var created = await service.CreateOrderAsync(customer.Id, new[] { new NewOrderLine(product.Id, 2) });
+        var order = created.Value!;
+        order.Status = OrderStatus.Shipped;
+        await db.SaveChangesAsync();
+        Assert.Equal(8, db.Products.Single(p => p.Id == product.Id).StockQuantity);
+
+        var result = await service.CancelOrderAsync(order.Id);
+
+        Assert.False(result.Success);
+        Assert.Equal(8, db.Products.Single(p => p.Id == product.Id).StockQuantity);
+        Assert.Equal(OrderStatus.Shipped, db.Orders.Single(o => o.Id == order.Id).Status);
+    }
 }
