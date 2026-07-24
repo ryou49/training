@@ -5,41 +5,111 @@
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <h1 class="h3 mb-0">商品列表</h1>
-    <div class="btn-group" role="group" aria-label="商品檢視">
-        <a class="btn btn-primary" asp-action="Index">全部商品</a>
-        <a class="btn btn-outline-secondary" asp-action="LowStock">低庫存</a>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div class="btn-group" role="group" aria-label="商品檢視">
+            <a class="btn btn-primary" asp-action="Index" asp-route-status="@Model.Status">全部商品</a>
+            <a class="btn btn-outline-secondary" asp-action="LowStock">低庫存</a>
+        </div>
+        <a class="btn btn-success" asp-action="Create">新增商品</a>
     </div>
 </div>
 
-<table class="table table-hover align-middle">
-    <thead>
-        <tr>
-            <th>SKU</th>
-            <th>名稱</th>
-            <th class="text-end">單價</th>
-            <th class="text-end">現有庫存</th>
-            <th>狀態</th>
-        </tr>
-    </thead>
-    <tbody>
-        @foreach (var product in Model.Products)
-        {
-            <tr>
-                <td>@product.Sku</td>
-                <td>@product.Name</td>
-                <td class="text-end">@Money(product.UnitPrice)</td>
-                <td class="text-end">@product.StockQuantity</td>
-                <td>
-                    @if (product.IsActive)
-                    {
-                        <span class="badge bg-success">販售中</span>
-                    }
-                    else
-                    {
-                        <span class="badge bg-secondary">已停售</span>
-                    }
-                </td>
-            </tr>
-        }
-    </tbody>
-</table>
+<form method="get" asp-action="Index" class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+        <label class="form-label" for="status">販售狀態</label>
+        <select name="status" id="status" class="form-select" onchange="this.form.submit()">
+            @if (Model.Status == "all")
+            {
+                <option value="all" selected>全部</option>
+            }
+            else
+            {
+                <option value="all">全部</option>
+            }
+            @if (Model.Status == "active")
+            {
+                <option value="active" selected>販售中</option>
+            }
+            else
+            {
+                <option value="active">販售中</option>
+            }
+            @if (Model.Status == "inactive")
+            {
+                <option value="inactive" selected>已停售</option>
+            }
+            else
+            {
+                <option value="inactive">已停售</option>
+            }
+        </select>
+    </div>
+</form>
+
+@if (Model.Products.Count == 0)
+{
+    <div class="alert alert-info">沒有符合狀態的商品。</div>
+}
+else
+{
+    @* HTML5: form elements cannot wrap <tr>; use form=id on controls. *@
+    @foreach (var product in Model.Products)
+    {
+        var formId = $"update-product-{product.Id}";
+        <form id="@formId" asp-action="Update" method="post" class="d-none">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="Id" value="@product.Id" />
+            <input type="hidden" name="Status" value="@Model.Status" />
+        </form>
+    }
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead>
+                <tr>
+                    <th style="min-width: 7rem">SKU</th>
+                    <th style="min-width: 10rem">名稱</th>
+                    <th class="text-end">單價</th>
+                    <th style="min-width: 6rem" class="text-end">庫存</th>
+                    <th style="min-width: 7rem">狀態</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var product in Model.Products)
+                {
+                    var formId = $"update-product-{product.Id}";
+                    <tr>
+                        <td>
+                            <input form="@formId" name="Sku" value="@product.Sku" class="form-control form-control-sm" maxlength="20" required />
+                        </td>
+                        <td>
+                            <input form="@formId" name="Name" value="@product.Name" class="form-control form-control-sm" maxlength="100" required />
+                        </td>
+                        <td class="text-end text-nowrap">@Money(product.UnitPrice)</td>
+                        <td>
+                            <input form="@formId" name="StockQuantity" type="number" min="0" value="@product.StockQuantity" class="form-control form-control-sm text-end" required />
+                        </td>
+                        <td>
+                            <select form="@formId" name="IsActive" class="form-select form-select-sm">
+                                @if (product.IsActive)
+                                {
+                                    <option value="true" selected>販售中</option>
+                                    <option value="false">已停售</option>
+                                }
+                                else
+                                {
+                                    <option value="true">販售中</option>
+                                    <option value="false" selected>已停售</option>
+                                }
+                            </select>
+                        </td>
+                        <td class="text-end">
+                            <button form="@formId" type="submit" class="btn btn-sm btn-outline-primary">儲存</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

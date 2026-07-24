@@ -1,0 +1,31 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace OrderHub.Web.ViewModels;
+
+public class UpdateProductViewModel
+{
+    [Required]
+    public int Id { get; set; }
+
+    [Required(ErrorMessage = "SKU 為必填")]
+    [StringLength(20, ErrorMessage = "SKU 長度不可超過 20")]
+    [Display(Name = "SKU")]
+    public string Sku { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "名稱為必填")]
+    [StringLength(100, ErrorMessage = "名稱長度不可超過 100")]
+    [Display(Name = "名稱")]
+    public string Name { get; set; } = string.Empty;
+
+    [Range(0, int.MaxValue, ErrorMessage = "庫存不可為負數")]
+    [Display(Name = "庫存")]
+    public int StockQuantity { get; set; }
+
+    [Display(Name = "販售中")]
+    public bool IsActive { get; set; }
+
+    /// <summary>
+    /// Preserve list status filter after redirect.
+    /// </summary>
+    public string? Status { get; set; }
+}
