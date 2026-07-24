@@ -9,7 +9,9 @@
 - **模型**：Grok（session 預設模型）
 - **專案設定**：`AGENTS.md` + `AI-AGENTS/rules/01–05` + skills（`analyze-plan` / `fix-bug` / `code-reviewer` / `test-runner`）
 - **執行環境**：Windows、VS2022 Debug / `dotnet run`；資料庫 SQL Server 預設實例 `localhost`，資料庫名 `OrderHubTraining`（種子：客戶 20、商品 50、訂單 200）
-- **基準測試**（Phase 0 `/test-runner`）：`dotnet test training-repo/OrderHub.sln` → **Passed 28 / Failed 0 / Total 28**（約 2s）
+- **測試基準演進**：
+  - 練習 1 結束：`dotnet test` → **28** 通過  
+  - 練習 2 結束：`dotnet test` → **36** 通過（+8 回歸／強化測試）
 
 ---
 
@@ -31,64 +33,83 @@
 1. 先讀 `documents/` 與 `activity-guideline` 弄清「這是 AI 培訓不是產品交付」  
 2. 確認 DB：不是 LocalDB，而是 `Server=localhost;Database=OrderHubTraining`（本機 `MSSQLSERVER` 已在跑）  
 3. **先規劃再實作** agent 目錄：決定放 `training/AI-AGENTS/`（`training-repo/` 保持 code-only）、規則拆成多檔、skills 含 `analyze-plan`  
-4. 實作 → 拆成 **7 個 commit** 推上 fork（`ryou49/training`）  
-5. 最後才補 PROCESS 與 `/test-runner` 基準  
+4. 實作 → 拆成多個 commit 推上 fork（`ryou49/training`）  
+5. 補 PROCESS 與 `/test-runner` 基準  
+6. **練習 2**：每個 bug 皆 UI 重現 → 分析 → Unit Test 先 → 修 production → UI 確認 → 分 commit push  
 
-**為什麼變：** 環境與「agent 設定要怎麼 commit、Grok 如何發現 skills」若不先定案，後面修 bug 會反覆改路徑；所以把 Exercise 1 的設定做完整，再進練習 2。
+**為什麼變：** 環境與 agent 設定路徑若不先定案會反覆改；修 bug 時堅持「先測再修、一 bug 多 commit（Unit Test / Fix）」方便 review。
 
 ### 2. AI 幫上大忙的地方
 
 （哪件事 agent 做得又快又好？**貼上當時的提問原文**，說明為什麼這樣問有效。）
 
-**有效提問範例 1（釐清資料庫，避免自己猜）：**
+**有效提問範例 1（釐清資料庫）：**
 
 > 幫我確認現在 Debug 跑起來是連哪個資料庫？我覺得資料庫好像已經在跑了。
 
-Agent 對照 `appsettings*.json`、`Program.cs` 的 `UseSqlServer`，並用 `sqlcmd` 查到 `OrderHubTraining` 已 ONLINE 且列數為 20/50/200。  
-**為什麼有效：** 問的是「連線事實 + 如何驗證」，不是「SQL Server 是什麼」；agent 能讀設定又查本機服務。
+→ 對上 `localhost` / `OrderHubTraining`，並用 sqlcmd 驗證 20/50/200 種子。
 
-**有效提問範例 2（先計畫再動手，對齊培訓要求）：**
+**有效提問範例 2（agent 設定先 plan）：**
 
-> 我們應該建立多個 AGENTS.md 而不是單一巨大檔，放到 `training/AI-AGENTS/`，`training-repo` 只放 code。先 plan 再實作。
+> 我們應該建立多個 AGENTS.md…放到 `training/AI-AGENTS/`…再加 analyze-plan…
 
-後來又補：
+→ 產出模組規則 + 四 skills + junction 策略。
 
-> 再加一個 skill：先分析 training-repo 做 planning，然後 coder / reviewer / tester 迴圈。
+**有效提問範例 3（練習 2 給具體 UI 觀察，不是只貼客訴）：**
 
-產出：`rules/01–05` + 四個 skills 的完整目錄與內容，並用 junction 解決 Grok 只掃 `.grok/skills` 的限制。  
-**為什麼有效：** 先約束**目錄邊界**與**多檔策略**，再要實作，減少一次生成塞進 `training-repo/` 的走鐘。
+> Human driven test：訂單 #201 建立後 /Orders 第一頁沒有；最後一頁空白；已取消篩選也空白。
+
+> Gold 用原價對應付總額；手算原價×0.9。
+
+→ Agent 能對到 `Skip(page * pageSize)`、Gold 雙重折扣、Cancel 先改狀態再還庫存等根因。  
+**為什麼有效：** 有訂單號、頁面行為、金額／庫存數字，agent 不用猜症狀。
 
 ### 3. AI 誤導我的地方，與我如何發現
 
 （agent 說錯／改錯／過度自信的時刻。你靠什麼抓到——對照程式碼？頁面實測？跑測試？）
 
-**1）文件／agent 對「折扣只算一次、集中在 CalculateTotal」的簡化**
+**1）練習 1 時：文件說「折扣只在 CalculateTotal 算一次」——當時 code 並非如此**
 
-- 培訓文件與 agent 設定常見說法：會員折扣在**訂單總額折一次**，且「折扣集中在 `OrderService.CalculateTotal`」。  
-- **對照程式碼後發現不精確：**
-  - `CreateOrderAsync` 在 **Gold** 時已對 `UnitPriceSnapshot` 先乘折扣（約 L75–79）。  
-  - `CalculateTotal` 又對 **整筆 subtotal** 依客戶等級再乘 `(1 - GetDiscountRate)`（約 L134–138）。  
-  - 因此「只在 CalculateTotal 算一次」**不符合現況**；Gold 路徑可能與文件描述的「總額折一次」不一致（後續練習 2 客訴 2 很可能相關）。  
-- **如何發現：** 讀 `OrderService.cs`，不要只信 `AGENTS.md` / README 的折扣一句話。
+- 舊 code：Gold 建單時已折 `UnitPriceSnapshot`，`CalculateTotal` 再折 → 100 變 **81**。  
+- **如何發現：** 讀 `OrderService.cs`；UI 用「商品原價 vs 應付總額」而非用快照再 ×0.9。  
+- **練習 2 已修：** 快照一律原價，折扣只在 `CalculateTotal`（Gold 90、Silver 95）。
 
-**2）Git 與 Windows junction**
+**2）「單元測試全綠 = 沒 bug」是錯的**
 
-- 若直接 `git add .grok/`，Git 會**跟著 junction 走進** `AI-AGENTS`，把 rules/skills **重複加入** `.grok/` 路徑。  
-- **如何發現：** `git add -n .grok/` 預覽出現完整 duplicate 檔案列表。  
-- **處理：** 只 commit `AI-AGENTS/` 為單一真相；`.gitignore` 忽略 `.grok/rules/`、`.grok/skills/`；用 `link-grok-discovery.ps1` 本機重建 junction。
+- 練習 2 修之前：28～33 測全綠，三個 UI bug 仍在。  
+- **如何發現：**  
+  - 分頁：舊測試 `Assert.All` 在空集合上會過；只查 TotalCount 不查 page 內容。  
+  - 價格：只測手組 snapshot 的 `CalculateTotal`，沒有 **CreateOrder + Gold**。  
+  - 取消：只測狀態變 Cancelled，**不測庫存是否加回**。  
+
+**3）Git 與 Windows junction**
+
+- `git add .grok/` 會跟著 junction 重複加入 AI-AGENTS 內容。  
+- 處理：只 commit `AI-AGENTS/`；ignore junction；腳本重建 discovery。
+
+**4）Gold bug 在 UI 上「看起來沒壞」**
+
+- 若用**快照單價**當原價再 ×0.9，會得到 81=81，誤以為正確。  
+- 必須用 `/Products` **目錄原價**對 **應付總額**。
 
 ### 4. 我會帶回日常工作的一招
 
 （一個具體、可複製的做法，不要寫「要多驗證」這種口號——寫出**操作步驟**。）
 
-**招式：Agent 設定「根薄 + 模組規則 + 可 commit 的 skills」，code 目錄不塞設定**
+**招式 A：Agent 設定「根薄 + 模組規則 + skills」，code 目錄不塞設定**
 
-1. Repo 根放薄的 `AGENTS.md`（地圖、硬性規則路徑、skill 列表）。  
-2. 慣例拆到 `AI-AGENTS/rules/01-….md`（概述／分層／指令／慣例／安全），避免單一 400 行檔。  
-3. 重複流程做成 skill：`analyze-plan`（只規劃）、`fix-bug`、`code-reviewer`、`test-runner`。  
-4. 應用程式只在 `training-repo/`；agent 產物不混進 .sln 樹。  
-5. 每個邏輯塊**分開 commit**（bootstrap → rules → 各 skill → 工具腳本），方便 review 與回溯。  
-6. 動手前先對「文件一句話」開程式核對（例如折扣到底算在哪）。
+1. 根 `AGENTS.md` 只放地圖與 skill 列表。  
+2. 慣例拆 `AI-AGENTS/rules/01–05`。  
+3. 流程做成 `/analyze-plan`、`/fix-bug`、`/code-reviewer`、`/test-runner`。  
+4. 應用程式只在 `training-repo/`。
+
+**招式 B：修 bug 的固定節奏（練習 2 實作）**
+
+1. 自己在 UI 重現，記下**具體數字**（訂單號、原價、庫存 S0/S1/S2）。  
+2. `/test-runner` 看基準是否「假綠」。  
+3. **先寫會失敗的回歸測試**（或寫完立刻跑證明失敗），再改 production。  
+4. `/test-runner` 全綠 → UI 再確認 → **Unit Test commit 再 Fix commit** 分開 push。  
+5. 每個 commit message 寫：**症狀 → 根因 → 修法**。
 
 ---
 
@@ -99,33 +120,43 @@ Agent 對照 `appsettings*.json`、`Program.cs` 的 `UseSqlServer`，並用 `sql
 練習 1
 
 1. 我能不看筆記說出三個專案（Web/Core/Infrastructure）各自的職責  
-   - **是。**  
-   - **Web**：Controller / ViewModel / View，薄轉接與畫面。  
-   - **Core**：Domain、service 介面與商業邏輯（建單驗證、庫存扣減、狀態、金額計算）。  
-   - **Infrastructure**：EF `DbContext`、Repository、Migration、Seeder。  
+   - **是。** Web＝畫面轉接；Core＝商業邏輯；Infrastructure＝EF／Repository／Migration。  
 
 2. 我核對過 agent 描述的建單流程，且**至少找出一處不精確或過度簡化的說法**  
-   - **是。**  
-   - **實際建單流程（精簡）：**  
-     `OrdersController.Create (POST)` → ModelState → `OrderService.CreateOrderAsync` → 驗證客戶/明細/庫存 → 扣庫存 → 寫入 `UnitPriceSnapshot` → `IOrderRepository.Add/Save` → 導向 Details。  
-   - **不精確處：** 「折扣只在 `CalculateTotal`、訂單總額折一次」——實際上 Gold 在建單時已寫入折後單價，列表/明細的 `CalculateTotal` 又可能再套等級折扣（見上節「AI 誤導」）。  
+   - **是。** 舊說法「折扣只在 CalculateTotal」與當時 Gold 建單先折單價不符（練習 2 已修正 code 對齊規格）。  
 
 3. 我知道商業邏輯應該放在哪一層、新增頁面要動哪些地方  
-   - **是。**  
-   - 商業邏輯 → **Core service**；EF → **Infrastructure repository**；HTTP/畫面 → **Web**。  
-   - 新頁面典型動到：Repository 介面+實作 → Service 介面+實作 → Controller → ViewModel/View →（可選）`_Layout` 導覽 → `OrderHub.Tests` 測試。  
-   - 已用 skill：`/analyze-plan`（規劃）、`/code-reviewer`、`/test-runner`；修 bug 用 `/fix-bug`。
+   - **是。** Service 放 Core；EF 放 Repository；頁面動 Controller／ViewModel／View／測試等。  
 
 練習 2
 
 1. 三個 bug 我都先在頁面上重現過，才開始找程式  
-2. 我給 agent 的資訊包含具體觀察（頁碼／金額數字／庫存數字），而不是只貼客訴原文  
-3. 每個修復都回到頁面驗證過症狀消失  
-4. 每個 bug 都補了一個回歸測試，`dotnet test` 全綠  
-5. 三個獨立 commit，message 說明症狀與根因  
-6. （思考題）為什麼原本的測試沒抓到這三個 bug？
+   - **是。**  
+   - Bug 1：#201 第一頁沒有、最後一頁空白、已取消篩選空白。  
+   - Bug 2：Gold 原價×0.9 vs 應付總額（曾見雙重折扣 81）；Silver 對照正常。  
+   - Bug 3：建單庫存減少、取消後庫存未加回。  
 
-（尚未開始——下一步：客訴 1 訂單列表分頁。）
+2. 我給 agent 的資訊包含具體觀察（頁碼／金額數字／庫存數字），而不是只貼客訴原文  
+   - **是。** 例如訂單 #201、原價 100／總額 81、庫存 10→7→7 等描述。  
+
+3. 每個修復都回到頁面驗證過症狀消失  
+   - **是。**（使用者已目視確認 Bug 1／2／3。）  
+
+4. 每個 bug 都補了一個回歸測試，`dotnet test` 全綠  
+   - **是。** 目前 **36** 通過、0 失敗。  
+   - Bug 1：page1 含最新單、最後頁非空、Cancelled 篩選有列等。  
+   - Bug 2：Gold 快照原價＋總額 90 一次；Silver 95。  
+   - Bug 3：Pending／Confirmed 取消還庫存；Shipped 取消不動庫存。  
+
+5. 三個獨立 commit，message 說明症狀與根因  
+   - **是（且更細）。** 每個 bug 至少 **Unit Test Bug** + **Fix…** 分開；Bug 1 另拆最後頁／已取消說明 commit。  
+   - 範例：`Bug 1 - Unit Test Bug` / `Bug 1 - Fix Order missing after creations`；`Bug 2 - …`；`Bug 3 - …` 皆已 push `origin/main`。  
+
+6. （思考題）為什麼原本的測試沒抓到這三個 bug？  
+   - **Bug 1：** `Skip(page * pageSize)` 在 page=1 時略過第一頁；`Assert.All` 對空集合為 true；只斷言 TotalCount/TotalPages。  
+   - **Bug 2：** 價格測試手組 snapshot，未走 `CreateOrder`+Gold；建單快照測試用 Standard 客戶。  
+   - **Bug 3：** 取消測試只斷言狀態＝Cancelled，未斷言 `StockQuantity` 加回。  
+   - **共通：** 測試沒有鎖住「使用者在頁面上在乎的數字行為」。  
 
 練習 3
 
@@ -136,33 +167,36 @@ Agent 對照 `appsettings*.json`、`Program.cs` 的 `UseSqlServer`，並用 `sql
 5. 程式分層與命名跟既有的 Products 功能一致（請 agent 自我 review 一次，並自己確認）  
 6. 至少 3 個新測試，`dotnet test` 全綠  
 
-（尚未開始。）
-
 練習 4
 
 1. 重構後 `dotnet test` 全綠  
 2. 我能說出這次重構「改善了什麼、沒有改變什麼」  
 3. 我有在 code review 的角度看過 diff（不是 agent 說好就好）  
 
-（尚未開始。）
 
 ---
 
 ## 附錄：值得留下的對話片段
 
-### 片段 A — 確認 DB（具體、可查證）
+### 片段 A — 確認 DB
 
-- **我問：** Debug 到底連哪個資料庫？看起來 DB 已經在跑。  
-- **Agent 答（摘要）：** `UseSqlServer` + `Server=localhost;Database=OrderHubTraining`；本機 `MSSQLSERVER` Running；查詢確認庫存在且 20/50/200 筆種子。  
-- **重點：** 要求「設定檔 + 本機查證」，不要只聽預設 LocalDB 教學。
+- **我問：** Debug 到底連哪個資料庫？  
+- **結果：** `OrderHubTraining` @ `localhost`，種子 20/50/200。
 
-### 片段 B — Agent 目錄與 skills 規劃
+### 片段 B — Agent 目錄
 
-- **我問：** 多檔 AGENTS、放 `AI-AGENTS/`、code-only `training-repo`；再加 analyze-plan + coder/reviewer/tester 迴圈。先 plan。  
-- **Agent 答（摘要）：** 根 `AGENTS.md` 薄引導；`rules/01–05`；skills 四個；`.grok` junction 對 `AI-AGENTS` 做 discovery；勿把 junction 內容重複 commit。  
-- **實作結果：** 7 個結構化 commit 已 push 至 `origin/main`。
+- **結果：** `AI-AGENTS/` + 四 skills；`training-repo` code-only。
 
-### 片段 C — Phase 0 `/test-runner`
+### 片段 C — 練習 2 基準與假綠
 
-- **指令：** `dotnet test training-repo/OrderHub.sln`  
-- **結果：** **28 通過，0 失敗**（基準線，練習 2 開始前）。
+- 練習 2 前：28 通過。  
+- 加 Bug 1 測試前全綠仍分頁錯；加 Gold 回歸測試後 **Expected 100 Actual 90** 才鎖住雙重折扣。  
+- 練習 2 後：**36** 通過。
+
+### 片段 D — 練習 2 三 bug 根因一句話
+
+| Bug | 症狀（UI） | 根因 | 修法 |
+| --- | --- | --- | --- |
+| 1 | 新單不在第一頁；末頁／已取消空白 | 1-based page 卻 `Skip(page * pageSize)` | `Skip((page-1)*pageSize)` |
+| 2 | Gold 總額偏低；Silver 正常 | Gold 建單先折快照，`CalculateTotal` 再折 | 快照原價；折扣只在 CalculateTotal |
+| 3 | 取消後庫存不回升 | 先設 Cancelled 再 if 還庫存 → 永遠不進 | 先還庫存再設 Cancelled |
