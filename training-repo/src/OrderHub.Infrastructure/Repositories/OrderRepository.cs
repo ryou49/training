@@ -28,6 +28,8 @@ public class OrderRepository : IOrderRepository
         var totalCount = await query.CountAsync();
 
         // UI and OrderService use 1-based page numbers; Skip must use (page - 1).
+        // Fixes newest orders missing on /Orders page 1 after creation.
+        // Fixes last page blank when Skip overshot TotalCount.
         var items = await query
             .OrderByDescending(o => o.CreatedAt)
             .Skip((page - 1) * pageSize)
