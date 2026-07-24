@@ -21,8 +21,32 @@ public class ProductRepository : IProductRepository
     public async Task<IReadOnlyList<Product>> GetActiveAsync() =>
         await _db.Products.Where(p => p.IsActive).OrderBy(p => p.Sku).ToListAsync();
 
+    public async Task<IReadOnlyList<Product>> GetByStatusAsync(ProductStatusFilter filter)
+    {
+        var query = _db.Products.AsQueryable();
+
+        query = filter switch
+        {
+            ProductStatusFilter.Active => query.Where(p => p.IsActive),
+            ProductStatusFilter.Inactive => query.Where(p => !p.IsActive),
+            _ => query
+        };
+
+        return await query.OrderBy(p => p.Sku).ToListAsync();
+    }
+
     public Task<Product?> GetByIdAsync(int id) =>
         _db.Products.FirstOrDefaultAsync(p => p.Id == id);
+
+    public Task<bool> SkuExistsAsync(string sku, int? excludeProductId = null)
+    {
+        var query = _db.Products.Where(p => p.Sku == sku);
+        if (excludeProductId.HasValue)
+            query = query.Where(p => p.Id != excludeProductId.Value);
+        return query.AnyAsync();
+    }
+
+    public async Task AddAsync(Product product) => await _db.Products.AddAsync(product);
 
     public async Task<IReadOnlyList<LowStockProductInfo>> GetLowStockWithSoldQuantityAsync(
         int threshold,
